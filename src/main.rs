@@ -1,26 +1,22 @@
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::{
-    backend::CrosstermBackend,
-    layout::{Constraint::Percentage, Direction::Horizontal, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Clear, List, ListItem, Paragraph, Wrap},
-    Terminal,
-};
-use ui::{make_url_list, make_nocontent_page};
+use tui::{backend::CrosstermBackend, widgets::Clear, Terminal};
 
 use std::io;
 use unicode_width::UnicodeWidthStr;
 
 mod models;
-mod utils;
 mod ui;
+mod utils;
+mod keyboard;
+
 use models::{AppMode, AppState, Config};
+use ui::{default_layout, make_help_box, make_input, make_nocontent_page, make_url_list};
 use utils::{centered_rect, make_box};
+use keyboard::handle_event;
 
 fn main() -> Result<(), io::Error> {
     enable_raw_mode()?;
@@ -37,45 +33,27 @@ fn main() -> Result<(), io::Error> {
     loop {
         terminal.draw(|f| {
             let size = f.size();
-            let chunks = ui::default_layout(size);
+            let chunks = default_layout(size);
 
             if config.urls.len() > 0 {
                 let list = make_url_list(&config.urls);
                 f.render_stateful_widget(list, chunks[0], &mut state.list_state);
             } else {
-                let no_content = make_nocontent_page();
-                f.render_widget(no_content, chunks[0]);
+                f.render_widget(make_nocontent_page(), chunks[0]);
             }
 
             let view = make_box(None);
             f.render_widget(view, chunks[1]);
 
             if let AppMode::Help = state.mode {
-                let block = make_box(Some("Help"));
                 let area = centered_rect(50, 30, size);
-                let text = vec![" q - Quit", " h - Toggle help menu"].join("\n");
-                let help_text = Paragraph::new(text)
-                    .block(block)
-                    .style(Style::default().fg(Color::White))
-                    .wrap(Wrap { trim: false });
-
+                let help = make_help_box();
                 f.render_widget(Clear, area);
-                f.render_widget(help_text, area);
+                f.render_widget(help, area);
             }
 
             if let AppMode::Input = state.mode {
-                let block = make_box(Some("RSS URL"));
-                let area = centered_rect(50, 10, size);
-                let input_area = Rect {
-                    x: area.x,
-                    y: area.y,
-                    width: area.width,
-                    height: 3,
-                };
-                let input = Paragraph::new(state.input_text.as_ref())
-                    .block(block)
-                    .style(Style::default().fg(Color::White))
-                    .wrap(Wrap { trim: true });
+                let (input_area, input) = make_input(size, &state);
 
                 f.set_cursor(
                     input_area.x + state.input_text.width() as u16 + 1,
@@ -88,47 +66,7 @@ fn main() -> Result<(), io::Error> {
         })?;
 
         if let Event::Key(key) = event::read()? {
-            match state.mode {
-                AppMode::Input => match key.code {
-                    KeyCode::Char(x) => state.input_text.push(x),
-                    KeyCode::Esc => {
-                        state.input_text.clear();
-                        state.mode = AppMode::Normal;
-                    }
-                    KeyCode::Backspace => {
-                        state.input_text.pop();
-                    }
-                    KeyCode::Enter => {
-                        state.mode = AppMode::Normal;
-                        config.urls.push(state.input_text.clone());
-                        state.input_text.clear();
-                        confy::store("flux_rss", &config)?;
-                    }
-                    _ => {}
-                },
-                AppMode::Help => match key.code {
-                    KeyCode::Char('h') => state.mode = AppMode::Normal,
-                    KeyCode::Esc => state.mode = AppMode::Normal,
-                    _ => {}
-                },
-                AppMode::Normal => match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Char('h') => state.mode = AppMode::Help,
-                    KeyCode::Char('a') => state.mode = AppMode::Input,
-                    KeyCode::Esc => break,
-                    KeyCode::Up => {
-                        let selection = state.list_state.selected().unwrap().saturating_sub(1);
-                        state.list_state.select(Some(selection));
-                    }
-                    KeyCode::Down => {
-                        let selection = state.list_state.selected().unwrap().saturating_add(1);
-                        if selection < config.urls.len() {
-                            state.list_state.select(Some(selection));
-                        }
-                    }
-                    _ => {}
-                },
-            }
+            if !handle_event(&mut config, &mut state, key) {break}
         }
     }
 
