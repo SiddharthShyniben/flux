@@ -4,14 +4,17 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use serde_derive::{Deserialize, Serialize};
-use std::io;
+use std::{io, dbg, println};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Modifier},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap, List, ListItem},
-    Terminal, text::Span,
+    style::{Color, Modifier, Style},
+    text::Span,
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap, ListState},
+    Terminal,
 };
+
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct Config {
@@ -27,9 +30,11 @@ fn main() -> Result<(), io::Error> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut help = false;
-    let mut add_url = true;
-    let mut text = "https://";
-    let config: Config = confy::load("flux_rss")?;
+    let mut add_url = false;
+    let mut text = String::new();
+    let mut config: Config = confy::load("flux_rss")?;
+    let mut state = ListState::default();
+    state.select(Some(0));
 
     loop {
         terminal.draw(|f| {
@@ -41,16 +46,23 @@ fn main() -> Result<(), io::Error> {
 
             let list = Block::default().title(" Flux ").borders(Borders::ALL);
             if config.urls.len() > 0 {
-                let list_items: Vec<ListItem<'_>> = config.urls
+                let list_items: Vec<ListItem<'_>> = config
+                    .urls
                     .iter()
                     .map(|url| ListItem::new(url.to_string()))
                     .collect();
-
-                let list = List::new(list_items);
-                f.render_widget(list, chunks[0]);
-            } else {
-                let list = Paragraph::new(Span::styled(" Your feed is empty.", Style::default().add_modifier(Modifier::DIM)))
+                
+                let list = List::new(list_items)
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+                    .highlight_symbol(" >> ")
                     .block(list);
+                f.render_stateful_widget(list, chunks[0], &mut state);
+            } else {
+                let list = Paragraph::new(Span::styled(
+                    " Your feed is empty.",
+                    Style::default().add_modifier(Modifier::DIM),
+                ))
+                .block(list);
                 f.render_widget(list, chunks[0]);
             };
             let view = Block::default().borders(Borders::ALL);
@@ -72,17 +84,26 @@ fn main() -> Result<(), io::Error> {
                 f.render_widget(Clear, area);
                 f.render_widget(help_text, area);
             }
-            
+
             if add_url {
-                let block = Block::default().title(" Help ").borders(Borders::ALL);
+                let block = Block::default().title(" RSS URL ").borders(Borders::ALL);
                 let area = centered_rect(50, 10, size);
                 let input_area = Rect {
-                    x: area.x, y: area.y, width: area.width, height: 3
+                    x: area.x,
+                    y: area.y,
+                    width: area.width,
+                    height: 3,
                 };
-                let input = Paragraph::new(text)
+                let input = Paragraph::new(text.as_ref())
                     .block(block)
                     .style(Style::default().fg(Color::White))
                     .wrap(Wrap { trim: true });
+                f.set_cursor(
+                    // Put cursor past the end of the input text
+                    input_area.x + text.width() as u16 + 1,
+                    // Move one line down, from the border to the input line
+                    input_area.y + 1,
+                );
                 f.render_widget(Clear, input_area);
                 f.render_widget(input, input_area);
             }
@@ -91,14 +112,25 @@ fn main() -> Result<(), io::Error> {
         if let Event::Key(key) = event::read()? {
             if add_url {
                 match key.code {
-                    KeyCode::Char(x) => text += x,
-                    KeyCode::Esc => {
-                        text = "https://";
-                        add_url = false
+                    KeyCode::Char(x) => {
+                        text.push(x);
                     }
-                }
-            }
-            else {
+                    KeyCode::Esc => {
+                        text.drain(..);
+                        add_url = false;
+                    }
+                    KeyCode::Backspace => {
+                        text.pop();
+                    }
+                    KeyCode::Enter => {
+                        add_url = false;
+                        config.urls.push(text.clone());
+                        text.drain(..);
+                        confy::store("flux_rss", &config)?;
+                    }
+                    _ => {}
+                };
+            } else {
                 match key.code {
                     KeyCode::Char('q') => break,
                     KeyCode::Char('h') => help = !help,
@@ -108,6 +140,16 @@ fn main() -> Result<(), io::Error> {
                             help = false
                         } else {
                             break;
+                        }
+                    },
+                    KeyCode::Up => {
+                        let selection = state.selected().unwrap().saturating_sub(1);
+                        state.select(Some(selection));
+                    },
+                    KeyCode::Down => {
+                        let selection = state.selected().unwrap().saturating_add(1);
+                        if selection < config.urls.len() {
+                            state.select(Some(selection));
                         }
                     }
                     _ => {}

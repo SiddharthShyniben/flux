@@ -96,6 +96,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_derive",
+ "unicode-width",
 ]
 
 [[package]]
