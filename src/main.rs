@@ -3,22 +3,39 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use serde_derive::{Deserialize, Serialize};
-use std::{io, dbg, println};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::Span,
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap, ListState},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
 
+use serde_derive::{Deserialize, Serialize};
+
+use std::{default, io};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct Config {
     urls: Vec<String>,
+}
+
+#[derive(Default)]
+enum AppMode {
+    #[default]
+    Normal,
+    Help,
+    Input,
+}
+
+struct AppState {
+    pub mode: AppMode,
+    pub help: bool,
+    pub input: bool,
+    pub input_text: String,
+    pub list_state: ListState,
 }
 
 fn main() -> Result<(), io::Error> {
@@ -29,12 +46,9 @@ fn main() -> Result<(), io::Error> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut help = false;
-    let mut add_url = false;
-    let mut text = String::new();
     let mut config: Config = confy::load("flux_rss")?;
-    let mut state = ListState::default();
-    state.select(Some(0));
+    let mut state = AppState::default();
+    state.list_state.select(Some(0));
 
     loop {
         terminal.draw(|f| {
@@ -51,7 +65,7 @@ fn main() -> Result<(), io::Error> {
                     .iter()
                     .map(|url| ListItem::new(url.to_string()))
                     .collect();
-                
+
                 let list = List::new(list_items)
                     .highlight_style(Style::default().add_modifier(Modifier::BOLD))
                     .highlight_symbol(" >> ")
@@ -68,11 +82,10 @@ fn main() -> Result<(), io::Error> {
             let view = Block::default().borders(Borders::ALL);
             f.render_widget(view, chunks[1]);
 
-            if help {
+            if let AppMode::Help = state.mode {
                 let block = Block::default().title(" Help ").borders(Borders::ALL);
                 let area = centered_rect(50, 30, size);
-                let text = vec!["q - Quit", "h - Toggle help menu"];
-                let text = text
+                let text = vec!["q - Quit", "h - Toggle help menu"]
                     .iter()
                     .map(|&s| " ".to_owned() + s)
                     .collect::<Vec<_>>()
@@ -85,7 +98,7 @@ fn main() -> Result<(), io::Error> {
                 f.render_widget(help_text, area);
             }
 
-            if add_url {
+            if AppMode::Input = state.mode {
                 let block = Block::default().title(" RSS URL ").borders(Borders::ALL);
                 let area = centered_rect(50, 10, size);
                 let input_area = Rect {
@@ -94,13 +107,13 @@ fn main() -> Result<(), io::Error> {
                     width: area.width,
                     height: 3,
                 };
-                let input = Paragraph::new(text.as_ref())
+                let input = Paragraph::new(state.input_text.as_ref())
                     .block(block)
                     .style(Style::default().fg(Color::White))
                     .wrap(Wrap { trim: true });
                 f.set_cursor(
                     // Put cursor past the end of the input text
-                    input_area.x + text.width() as u16 + 1,
+                    input_area.x + state.input_text.width() as u16 + 1,
                     // Move one line down, from the border to the input line
                     input_area.y + 1,
                 );
@@ -110,30 +123,33 @@ fn main() -> Result<(), io::Error> {
         })?;
 
         if let Event::Key(key) = event::read()? {
-            if add_url {
-                match key.code {
+            match state.mode {
+                AppMode::Input => match key.code {
                     KeyCode::Char(x) => {
-                        text.push(x);
+                        state.input_text.push(x);
                     }
                     KeyCode::Esc => {
-                        text.drain(..);
-                        add_url = false;
+                        state.input_text.drain(..);
+                        state.mode = AppMode::Normal;
                     }
                     KeyCode::Backspace => {
-                        text.pop();
+                        state.input_text.pop();
                     }
                     KeyCode::Enter => {
-                        add_url = false;
-                        config.urls.push(text.clone());
-                        text.drain(..);
+                        state.mode = AppMode::Normal;
+                        config.urls.push(state.input_text.clone());
+                        state.input_text.drain(..);
                         confy::store("flux_rss", &config)?;
                     }
                     _ => {}
-                };
-            } else {
-                match key.code {
+                },
+                AppMode::Help => match key.code {
+                    KeyCode::Char('h') => state.mode = AppMode::Normal,
+                    KeyCode::Esc => state.mode = AppMode::Normal,
+                    _ => {}
+                },
+                AppMode::Normal => match key.code {
                     KeyCode::Char('q') => break,
-                    KeyCode::Char('h') => help = !help,
                     KeyCode::Char('a') => add_url = true,
                     KeyCode::Esc => {
                         if help {
@@ -141,11 +157,11 @@ fn main() -> Result<(), io::Error> {
                         } else {
                             break;
                         }
-                    },
+                    }
                     KeyCode::Up => {
                         let selection = state.selected().unwrap().saturating_sub(1);
                         state.select(Some(selection));
-                    },
+                    }
                     KeyCode::Down => {
                         let selection = state.selected().unwrap().saturating_add(1);
                         if selection < config.urls.len() {
@@ -153,7 +169,7 @@ fn main() -> Result<(), io::Error> {
                         }
                     }
                     _ => {}
-                }
+                },
             }
         }
     }
