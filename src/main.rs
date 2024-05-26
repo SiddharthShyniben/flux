@@ -3,7 +3,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::{backend::CrosstermBackend, widgets::Clear, Terminal};
+use tui::{backend::CrosstermBackend, widgets::{Clear, Paragraph}, Terminal};
 
 use std::io;
 use unicode_width::UnicodeWidthStr;
@@ -12,11 +12,13 @@ mod models;
 mod ui;
 mod utils;
 mod keyboard;
+mod fetch;
 
 use models::{AppMode, AppState, Config};
 use ui::{default_layout, make_help_box, make_input, make_nocontent_page, make_url_list};
 use utils::{centered_rect, make_box};
 use keyboard::handle_event;
+use fetch::fetch_feed;
 
 fn main() -> Result<(), io::Error> {
     enable_raw_mode()?;
@@ -41,8 +43,10 @@ fn main() -> Result<(), io::Error> {
             } else {
                 f.render_widget(make_nocontent_page(), chunks[0]);
             }
+            
 
             let view = make_box(None);
+            let view = Paragraph::new("Loading...").block(view);
             f.render_widget(view, chunks[1]);
 
             if let AppMode::Help = state.mode {

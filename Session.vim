@@ -13,12 +13,11 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
-badd +27 src/ui.rs
-badd +39 src/main.rs
-badd +13 src/utils.rs
+badd +7 src/fetch.rs
+badd +26 src/main.rs
 argglobal
 %argdel
-$argadd src/ui.rs
+$argadd src/fetch.rs
 edit src/main.rs
 let s:save_splitbelow = &splitbelow
 let s:save_splitright = &splitright
@@ -36,66 +35,49 @@ set winminheight=0
 set winheight=1
 set winminwidth=0
 set winwidth=1
-wincmd =
+exe 'vert 1resize ' . ((&columns * 83 + 83) / 167)
+exe 'vert 2resize ' . ((&columns * 83 + 83) / 167)
 argglobal
-balt src/ui.rs
-setlocal fdm=expr
-setlocal fde=nvim_treesitter#foldexpr()
+balt src/fetch.rs
+setlocal fdm=syntax
+setlocal fde=0
 setlocal fmr={{{,}}}
 setlocal fdi=#
-setlocal fdl=99
-setlocal fml=1
+setlocal fdl=3
+setlocal fml=2
 setlocal fdn=20
 setlocal fen
-38
-normal! zo
-38
-normal! zo
-38
-normal! zo
-let s:l = 39 - ((20 * winheight(0) + 20) / 41)
-if s:l < 1 | let s:l = 1 | endif
-keepjumps exe s:l
-normal! zt
-keepjumps 39
-normal! 026|
-wincmd w
-argglobal
-if bufexists(fnamemodify("src/ui.rs", ":p")) | buffer src/ui.rs | else | edit src/ui.rs | endif
-if &buftype ==# 'terminal'
-  silent file src/ui.rs
-endif
-balt src/utils.rs
-setlocal fdm=expr
-setlocal fde=nvim_treesitter#foldexpr()
-setlocal fmr={{{,}}}
-setlocal fdi=#
-setlocal fdl=99
-setlocal fml=1
-setlocal fdn=20
-setlocal fen
-9
-normal! zo
-10
-normal! zo
-10
-normal! zo
-16
-normal! zo
-17
-normal! zo
-21
-normal! zo
-21
-normal! zo
-let s:l = 27 - ((26 * winheight(0) + 20) / 41)
+let s:l = 27 - ((20 * winheight(0) + 20) / 41)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
 keepjumps 27
 normal! 05|
 wincmd w
-wincmd =
+argglobal
+if bufexists(fnamemodify("src/fetch.rs", ":p")) | buffer src/fetch.rs | else | edit src/fetch.rs | endif
+if &buftype ==# 'terminal'
+  silent file src/fetch.rs
+endif
+balt src/main.rs
+setlocal fdm=syntax
+setlocal fde=0
+setlocal fmr={{{,}}}
+setlocal fdi=#
+setlocal fdl=3
+setlocal fml=2
+setlocal fdn=20
+setlocal fen
+let s:l = 7 - ((6 * winheight(0) + 20) / 41)
+if s:l < 1 | let s:l = 1 | endif
+keepjumps exe s:l
+normal! zt
+keepjumps 7
+normal! 025|
+wincmd w
+2wincmd w
+exe 'vert 1resize ' . ((&columns * 83 + 83) / 167)
+exe 'vert 2resize ' . ((&columns * 83 + 83) / 167)
 tabnext 1
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0 && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'
   silent exe 'bwipe ' . s:wipebuf
@@ -111,6 +93,7 @@ if filereadable(s:sx)
 endif
 let &g:so = s:so_save | let &g:siso = s:siso_save
 set hlsearch
+nohlsearch
 doautoall SessionLoadPost
 unlet SessionLoad
 " vim: set ft=vim :
